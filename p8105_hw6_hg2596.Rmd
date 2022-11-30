@@ -1,6 +1,6 @@
 ---
 title: "p8105_hw6_hg2596"
-output: html_document
+output: github_document
 date: "2022-11-29"
 ---
 
@@ -72,7 +72,7 @@ head(birth)
 
 ```{r}
 birth_wt = 
-  birth_wt %>%
+  birth %>%
   janitor::clean_names() %>%
   mutate(babysex = as.character(babysex),
          frace = as.character(frace), 
