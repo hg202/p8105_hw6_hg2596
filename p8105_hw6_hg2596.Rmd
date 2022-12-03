@@ -2,11 +2,20 @@
 title: "p8105_hw6_hg2596"
 output: github_document
 date: "2022-11-29"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r}
 library(tidyverse)
 library(p8105.datasets)
+library(dplyr)
+library(corrplot)
+library(plotly)
+library(modelr)
+library(mgcv)
+
+set.seed(1)
 ```
 
 # Problem 2 
@@ -35,52 +44,247 @@ homicide_2 = as_tibble(homicide_1) %>%
   mutate(victim_age = as.numeric(victim_age)) %>%
   mutate(lat = as.numeric(lat)) %>%
   mutate(lon = as.numeric(lon)) %>%
-  mutate(status = ifelse(disposition%in%c("Closed without arrest","Open/No arrest"), 1, 0))
+  mutate(status = ifelse(disposition%in%c("Closed by arrest"), 1, 0))
 ```
+
+
+# omit variable and Filter Out and Race
+
+```{r}
+homicide_3 = 
+  homicide_2 %>%
+  mutate(omitt = ifelse(city_state%in%c("Dallas,TX","Phoenix,AZ","Kansas City,MO","Tulsa,AL"), 0, 1)) %>%
+  filter(omitt == 1) %>%
+  filter(victim_race %in% c("White","Black")) %>%
+  arrange(status)
+  
+```
+
+# Filter out Baltimore and Logisitic Reg
 
 ```{r}
 fit_logistic = 
-  homicide_2 %>% 
+  homicide_3 %>% 
+  filter(city_state == "Baltimore,MD") %>%
   glm(status ~ victim_age + victim_sex + victim_race, data = ., family = binomial()) 
+
 ```
 
 ```{r}
 fit_logistic %>% 
   broom::tidy() %>% 
-  mutate(OR = exp(estimate)) %>%
-  select(term, log_OR = estimate, OR, p.value) %>% 
+  mutate(OR = exp(estimate), 
+         CI_Lower = exp((estimate) - 1.96*(std.error)),
+         CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
+  select(term, log_OR = estimate, OR, CI_Lower, CI_Upper, p.value) %>%
   knitr::kable(digits = 3)
 ```
 
-# Do it for each of the cities (
+#Filter out Vicitm Sex Unknown 
 
-grouping 
-piping 
-purr::map (need to create function!)
-)
+```{r}
+homicide_4 = 
+  homicide_3 %>%
+  filter(victim_sex %in% c("Female","Male"))
+```
+
+# Map over cities 
+
+```{r}
+fit_over_cities = 
+  homicide_4 %>%
+  nest(data = -city_state) %>%
+  mutate(
+    models = map(data, ~glm(status ~ victim_age + victim_sex + victim_race, data = .x, family = binomial()) %>% broom::tidy()%>%
+         mutate(OR = exp(estimate), 
+         CI_Lower = exp((estimate) - 1.96*(std.error)),
+         CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
+  filter(term == "victim_sexMale") %>%
+  select(term, OR, CI_Lower, CI_Upper, p.value) %>%
+  knitr::kable(digits = 3))) %>%
+  unnest(models) %>%
+  select(-data) 
+
+
+fit_over_cities
+```
 
 # Problem 3 
 
 ```{r}
 birth= read_csv("./data/birthweight.csv", show_col_types = FALSE)
-
 ```
 
-```{r}
-head(birth)
-```
+# Clean Data 
 
 ```{r}
 birth_wt = 
   birth %>%
   janitor::clean_names() %>%
-  mutate(babysex = as.character(babysex),
-         frace = as.character(frace), 
-         mrace = as.character(mrace))
+  mutate(babysex = as.factor(babysex),
+         frace = as.factor(frace), 
+         mrace = as.factor(mrace))
+
+```
+
+# Take away Character Varaibles for the Cor Matrix 
+
+```{r}
+birth_cor =
+  birth_wt %>%
+  select(-babysex,-frace,-mrace)
+```
+
+# Create a Correlation Matrix 
+
+```{r}
+M = cor(birth_cor)
+corrplot(M, method = 'color', order = 'alphabet')
+```
+
+Based on correlation matrix, the predictors that have the highest correlation with the outcome **birth weight** are **bhead** and **blenght**.
+
+```{r}
+birth_2 = 
+  birth_wt %>%
+  select(bwt,bhead,blength)
+```
+
+# Create Linear Regression 
+
+```{r}
+l1 = 
+  lm(bwt ~ bhead + blength, data = birth_2)
+  
+```
+
+# Add Residuals and Predictors 
+
+```{r}
+birth_3 = 
+  birth_2 %>% 
+  add_residuals(l1) %>%
+  add_predictions(l1)
+
+birth_3
+
+```
+
+# Plot residuals and fitted values for L1 
+
+```{r}
+graph_1 = 
+  birth_3 %>%
+  plot_ly(x = ~pred, y = ~resid, type = "scatter", mode = "markers",alpha = 1.2) %>% 
+  layout(title = 'Residuals vs Fitted Values (Graph 1)',
+         xaxis = list(title = 'Fitted Values'),
+         yaxis = list(title = 'Residuals'), 
+         legend = list(title=list(text='<b> True Mean Values </b>'))) 
+
+graph_1
+```
+
+# Create Second Linear Regression 
+
+```{r}
+l2 = 
+  lm(bwt ~ blength + gaweeks, data = birth_wt)
+
+second_set = 
+  birth_wt %>% 
+  select(bwt, blength, gaweeks) %>%
+  add_residuals(l2) %>%
+  add_predictions(l2)
+
+second_set
+```
+
+# Graph 2
+
+```{r}
+graph_2 = 
+  second_set %>%
+  plot_ly(x = ~pred, y = ~resid, type = "scatter", mode = "markers",alpha = 1.2) %>% 
+  layout(title = 'Residuals vs Fitted Values (Graph 2)',
+         xaxis = list(title = 'Fitted Values'),
+         yaxis = list(title = 'Residuals'), 
+         legend = list(title=list(text='<b> True Mean Values </b>'))) 
+
+graph_2
+```
+
+# Create Third Linear Regression 
+
+```{r}
+l3 = 
+  lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birth_wt)
+
+third_set = 
+  birth_wt %>% 
+  select(bwt,bhead,blength,babysex) %>%
+  add_residuals(l3) %>%
+  add_predictions(l3)
+
+third_set
+```
+
+# Graph 3 
+
+```{r}
+graph_3 = 
+  third_set %>%
+  plot_ly(x = ~pred, y = ~resid, type = "scatter", mode = "markers",alpha = 1.2) %>% 
+  layout(title = 'Residuals vs Fitted Values (Graph 3)',
+         xaxis = list(title = 'Fitted Values'),
+         yaxis = list(title = 'Residuals'), 
+         legend = list(title=list(text='<b> True Mean Values </b>'))) 
+
+graph_3
+```
+
+# Check with Cross Validation 
+
+```{r}
+cv_df =
+  crossv_mc(birth_wt, 100)
 
 ```
 
 ```{r}
-head(birth_wt)
+cv_df =
+  cv_df %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+
+```
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(
+    linear_m  = map(train, ~lm(bwt ~ bhead + blength, data = .x)),
+    linear_m2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    linear_m3 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .x))) %>% 
+  mutate(
+    rmse_linear_1 = map2_dbl(linear_m, test, ~rmse(model = .x, data = .y)),
+    rmse_linear_2    = map2_dbl(linear_m2, test, ~rmse(model = .x, data = .y)),
+    rmse_linear_3 = map2_dbl(linear_m3, test, ~rmse(model = .x, data = .y)))
+
+cv_df
+```
+
+# Show the RMSE 
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
