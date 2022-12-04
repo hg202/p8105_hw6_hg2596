@@ -90,9 +90,8 @@ homicide_1 = homicide_1 %>%
 ```
 
 The homicide raw data has `r nrow(homicide_1) ` observations and `r ncol(homicide_1)`  variables. 
-Key variables are **uid** which gives a unique ID to each homicide victim and the **city**, **state** in which the killing took place. Another important variable is the **deposition** which describes the status of the case for examples is it closed with an arrest or possibly still open with no arrest. 
 
-# Cleaning Data and Creating Status Variable 
+# Cleaning Data and Resolved Variable 
 
 ```{r}
 homicide_2 = as_tibble(homicide_1) %>%
@@ -103,8 +102,7 @@ homicide_2 = as_tibble(homicide_1) %>%
   mutate(status = ifelse(disposition%in%c("Closed by arrest"), 1, 0))
 ```
 
-
-# omit variable and Filter Out and Race
+# Clean up Data
 
 ```{r}
 homicide_3 = 
@@ -116,7 +114,7 @@ homicide_3 =
   
 ```
 
-# Filter out Baltimore and Logisitic Reg
+# Logisitic Regression for Baltimore
 
 ```{r}
 fit_logistic = 
@@ -126,6 +124,8 @@ fit_logistic =
 
 ```
 
+# Table for OR and CI for Baltimore
+
 ```{r}
 fit_logistic %>% 
   broom::tidy() %>% 
@@ -133,11 +133,11 @@ fit_logistic %>%
          CI_Lower = exp((estimate) - 1.96*(std.error)),
          CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
   filter(term == "victim_sexMale") %>%
-  select(term, log_OR = estimate, OR, CI_Lower, CI_Upper, p.value) %>%
+  select(term, OR, CI_Lower, CI_Upper, p.value) %>%
   knitr::kable(digits = 3)
 ```
 
-#Filter out Vicitm Sex Unknown 
+#Filter out Vicitm Sex 'Unknown' 
 
 ```{r}
 homicide_4 = 
@@ -145,7 +145,7 @@ homicide_4 =
   filter(victim_sex %in% c("Female","Male"))
 ```
 
-# Map over cities 
+# Map Over all Cities 
 
 ```{r}
 fit_over_cities = 
@@ -160,12 +160,20 @@ fit_over_cities =
          CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
    select(city_state, term, log_OR = estimate, OR, CI_Lower, CI_Upper, p.value) %>%
   filter(term == "victim_sexMale") %>%
-  select(city_state,term,OR, CI_Lower, CI_Upper) 
-
-
-fit_over_cities
+  select(city_state,term,OR, CI_Lower, CI_Upper)
 ```
 
+# Table of OR and CI for all Cities
+
+```{r}
+final = 
+  fit_over_cities %>%
+   knitr::kable(digits = 3)
+
+final
+```
+
+# Graph Cities and OR 
 
 ```{r}
 
@@ -185,9 +193,7 @@ graph_p_1 =
 graph_p_1  
 ```
 
-When we plot **estimated ORs** and **Cls** for each city, what we can observe is 
-
-Their were higher odds of being a male victim of homicide then female in places like **Nashville** and **Albuquerque** compared to places like **New York** and **Baton Rough** where there were higher odd of being a female victim of homicide then male after adjusting for victim age and sex. 
+When we plot **estimated ORs** and **Cls** for each city, what we can observe that a majority of **OR** are below 1.There are only three cities that have an **OR** higher than 1 and those are **Fresno**, **Stockton** and **Albuquerque** so in these cities, a male victim of homicide has **1.5** times the odds of **the case being solved** then female victims, after adjusted for victim age and sex. In New York, a male victim of homicide has about **0.3** times the odds of **the case being solved** then female victims, after adjusted for victim age and sex. Whereas, Washington DC, a male victim of homicide has **0.7** times the odds of **the case being solved** then females victims, after adjusted for victim age and sex. Therefore, the odds of solving a case really depends on what city the victim was in, but it does seem to favor closing female victim cases over male victim cases. 
 
 
 # Problem 3 
@@ -196,7 +202,7 @@ Their were higher odds of being a male victim of homicide then female in places 
 birth= read_csv("./data/birthweight.csv", show_col_types = FALSE)
 ```
 
-# Clean Data 
+# Clean Birth Data 
 
 ```{r}
 birth_wt = 
@@ -251,7 +257,7 @@ birth_3
 
 ```
 
-# Plot residuals and fitted values for L1 
+# Graph 1: Plot residuals and fitted values for L1 
 
 ```{r}
 graph_1 = 
@@ -280,7 +286,7 @@ second_set =
 second_set
 ```
 
-# Graph 2
+# Graph 2: Plot residuals and fitted values for L2
 
 ```{r}
 graph_2 = 
@@ -309,7 +315,7 @@ third_set =
 third_set
 ```
 
-# Graph 3 
+# Graph 3: Plot residuals and fitted values for L3
 
 ```{r}
 graph_3 = 
@@ -369,7 +375,7 @@ cv_df %>%
   ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
-It's important to note that **low RMSE** values are what help show if a model is a good fit. In our violin graph, it shows how the model I created and the last model with the interactions were the lowest.This goes to show that **including all the interaction terms** were helpful in predicting then varables such as **length at birth** and **gestational age** alone.It also makes since that the first model I created had a low RMSE because I knew that my predictors **blength** and **bhead** were **highly assoicated** with the outcome, therefore helped predict it better. 
+It's important to note that **low RMSE** values are what help show if a model is a good fit. In our violin graph, it shows how **linear regression 1** and the **third regression** had similar range for rmse and were the lowest compared to the **second linear regression**.This goes to show that **including all the interaction terms** in the **third linear regression** were helpful in predicting the model compared to **length at birth** and **gestational age** which were not as good as a fit.It also makes since that the first model I created had a low RMSE because I knew that my predictors **blength** and **bhead** were **highly associated** with the outcome, therefore better at predicting the model. 
 
 
 
