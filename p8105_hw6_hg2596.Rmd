@@ -3,7 +3,7 @@ title: "p8105_hw6_hg2596"
 output: github_document
 date: "2022-11-29"
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r}
@@ -17,6 +17,62 @@ library(mgcv)
 
 set.seed(1)
 ```
+
+### Problem 1
+
+To obtain a distribution for $\hat{r}^2$, we'll follow basically the same procedure we used for regression coefficients: draw bootstrap samples; the a model to each; extract the value I'm concerned with; and summarize. Here, we'll use `modelr::bootstrap` to draw the samples and `broom::glance` to produce `r.squared` values. 
+
+```{r weather_df, cache = TRUE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  ggplot(aes(x = r.squared)) + geom_density()
+```
+
+In this example, the $\hat{r}^2$ value is high, and the upper bound at 1 may be a cause for the generally skewed shape of the distribution. If we wanted to construct a confidence interval for $R^2$, we could take the 2.5% and 97.5% quantiles of the estimates across bootstrap samples. However, because the shape isn't symmetric, using the mean +/- 1.96 times the standard error probably wouldn't work well.
+
+We can produce a distribution for $\log(\beta_0 * \beta1)$ using a similar approach, with a bit more wrangling before we make our plot.
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  select(id = `.id`, term, estimate) %>% 
+  pivot_wider(
+    names_from = term, 
+    values_from = estimate) %>% 
+  rename(beta0 = `(Intercept)`, beta1 = tmin) %>% 
+  mutate(log_b0b1 = log(beta0 * beta1)) %>% 
+  ggplot(aes(x = log_b0b1)) + geom_density()
+```
+
+As with $r^2$, this distribution is somewhat skewed and has some outliers. 
+
+The point of this is not to say you should always use the bootstrap -- it's possible to establish "large sample" distributions for strange parameters / values / summaries in a lot of cases, and those are great to have. But it is helpful to know that there's a way to do inference even in tough cases. 
+
 
 # Problem 2 
 
@@ -76,6 +132,7 @@ fit_logistic %>%
   mutate(OR = exp(estimate), 
          CI_Lower = exp((estimate) - 1.96*(std.error)),
          CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
+  filter(term == "victim_sexMale") %>%
   select(term, log_OR = estimate, OR, CI_Lower, CI_Upper, p.value) %>%
   knitr::kable(digits = 3)
 ```
@@ -95,19 +152,43 @@ fit_over_cities =
   homicide_4 %>%
   nest(data = -city_state) %>%
   mutate(
-    models = map(data, ~glm(status ~ victim_age + victim_sex + victim_race, data = .x, family = binomial()) %>% broom::tidy()%>%
-         mutate(OR = exp(estimate), 
+    models = map(data, ~glm(status ~ victim_age + victim_sex + victim_race, data = .x, family = binomial())),
+                 outcome = map(models,broom::tidy,conf.int = TRUE)) %>%
+      unnest(cols = outcome) %>%
+      mutate(OR = exp(estimate), 
          CI_Lower = exp((estimate) - 1.96*(std.error)),
          CI_Upper = exp((estimate) + 1.96*(std.error))) %>%
+   select(city_state, term, log_OR = estimate, OR, CI_Lower, CI_Upper, p.value) %>%
   filter(term == "victim_sexMale") %>%
-  select(term, OR, CI_Lower, CI_Upper, p.value) %>%
-  knitr::kable(digits = 3))) %>%
-  unnest(models) %>%
-  select(-data) 
+  select(city_state,term,OR, CI_Lower, CI_Upper) 
 
 
 fit_over_cities
 ```
+
+
+```{r}
+
+graph_p_1 = 
+  fit_over_cities %>%
+  mutate(city_state = fct_reorder(city_state, OR)) %>%
+  ggplot(aes(x = city_state, y = OR)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = CI_Lower, ymax = CI_Upper)) + 
+  labs(
+    title = "Scatter Plot of OR Estimates with Error Bars",
+    x = "Cities",
+    y = "OR Estimates",
+  ) + 
+  theme(axis.text.x=element_text(angle=60,vjust = 1, hjust=1,size=10))
+
+graph_p_1  
+```
+
+When we plot **estimated ORs** and **Cls** for each city, what we can observe is 
+
+Their were higher odds of being a male victim of homicide then female in places like **Nashville** and **Albuquerque** compared to places like **New York** and **Baton Rough** where there were higher odd of being a female victim of homicide then male after adjusting for victim age and sex. 
+
 
 # Problem 3 
 
@@ -287,4 +368,8 @@ cv_df %>%
   mutate(model = fct_inorder(model)) %>% 
   ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
+
+It's important to note that **low RMSE** values are what help show if a model is a good fit. In our violin graph, it shows how the model I created and the last model with the interactions were the lowest.This goes to show that **including all the interaction terms** were helpful in predicting then varables such as **length at birth** and **gestational age** alone.It also makes since that the first model I created had a low RMSE because I knew that my predictors **blength** and **bhead** were **highly assoicated** with the outcome, therefore helped predict it better. 
+
+
 
